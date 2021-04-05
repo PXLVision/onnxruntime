@@ -49,37 +49,37 @@ Status MatMulIntegerToFloatBase::ComputeCommon(OpKernelContext* ctx,
   auto* y_data = y->template MutableData<float>();
   const auto* bias_data = bias_tensor != nullptr ? bias_tensor->Data<float>() : nullptr;
 
-  const size_t M = static_cast<size_t>(helper.M());
-  const size_t N = static_cast<size_t>(helper.N());
-  const size_t K = static_cast<size_t>(helper.K());
-  const int num_gemms = static_cast<int>(helper.OutputOffsets().size());
-  const bool b_is_signed = packed_b_ ? b_is_signed_ : b->IsDataType<int8_t>();
-
   // batch gemm
+  MLAS_GEMM_U8X8_SHAPE_PARAMS gemm_shape;
+  gemm_shape.M = static_cast<size_t>(helper.M());
+  gemm_shape.N = static_cast<size_t>(helper.N());
+  gemm_shape.K = static_cast<size_t>(helper.K());
+  gemm_shape.BIsSigned = packed_b_ ? b_is_signed_ : b->IsDataType<int8_t>();
+
+  const int num_gemms = static_cast<int>(helper.OutputOffsets().size());
   std::vector<MLAS_QGEMM_SCALE_BIAS_OUTPUT_PROCESSOR> gemm_scale_procs;
   gemm_scale_procs.reserve(num_gemms);
-  MLAS_GEMM_U8X8_BATCH_CALLER batch_gemm(M, N, K, bool(packed_b_), b_is_signed, num_gemms);
+  std::vector<MLAS_GEMM_U8X8_DATA_PARAMS> gemm_data_vec(num_gemms);
 
   for (size_t gemm_idx = 0; gemm_idx < num_gemms; gemm_idx++) {
     gemm_scale_procs.emplace_back(y_data + helper.OutputOffsets()[gemm_idx],
-                              N,
-                              &multiplier,
-                              bias_data);
-    batch_gemm.AddData(
-        a_data + helper.LeftOffsets()[gemm_idx], // A
-        K, // lda
-        a_zero_point,
-        bool(packed_b_) ? packed_b_.get() :
-            static_cast<const uint8_t*>(b->DataRaw()) + +helper.RightOffsets()[gemm_idx], // B
-        N, // ldb
-        &b_zero_point,
-        false, // per_col_zero_points
-        reinterpret_cast<int32_t*>(y_data) + helper.OutputOffsets()[gemm_idx], // C
-        N, // ldc
-        &gemm_scale_procs[gemm_idx]);
+                                  gemm_shape.N,
+                                  &multiplier,
+                                  bias_data);
+    auto& params = gemm_data_vec[gemm_idx];
+    params.OutputProcessor = &(gemm_scale_procs[gemm_idx]);
+    params.A = a_data + helper.LeftOffsets()[gemm_idx];
+    params.lda = gemm_shape.K;
+    params.ZeroPointA = a_zero_point;
+    params.B = bool(packed_b_) ? packed_b_.get() : 
+        static_cast<const uint8_t*>(b->DataRaw()) + helper.RightOffsets()[gemm_idx];
+    params.ldb = gemm_shape.N;
+    params.ZeroPointB = &b_zero_point;
+    params.C = reinterpret_cast<int32_t*>(y_data) + helper.OutputOffsets()[gemm_idx];
+    params.ldc = gemm_shape.N;
   }
 
-  batch_gemm.Run(ctx->GetOperatorThreadPool());
+  MlasGemmBatch(gemm_shape, gemm_data_vec.data(), num_gemms, ctx->GetOperatorThreadPool());
 
   return Status::OK();
 }
