@@ -226,6 +226,8 @@ public:
         size_t,         // Supplies the element count per col to process
         size_t          // Supplies the leading dimension of matrix
         ) const = 0;
+
+    virtual ~MLAS_QGEMM_OUTPUT_PROCESSOR() {}
 };
 
 class MLAS_QGEMM_SCALE_BIAS_OUTPUT_PROCESSOR : public MLAS_QGEMM_OUTPUT_PROCESSOR {

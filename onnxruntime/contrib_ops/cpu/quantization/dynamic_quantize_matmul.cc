@@ -56,7 +56,7 @@ Status MatMulIntegerToFloatBase::ComputeCommon(OpKernelContext* ctx,
   gemm_shape.K = static_cast<size_t>(helper.K());
   gemm_shape.BIsSigned = packed_b_ ? b_is_signed_ : b->IsDataType<int8_t>();
 
-  const int num_gemms = static_cast<int>(helper.OutputOffsets().size());
+  const size_t num_gemms = helper.OutputOffsets().size();
   std::vector<MLAS_QGEMM_SCALE_BIAS_OUTPUT_PROCESSOR> gemm_scale_procs;
   gemm_scale_procs.reserve(num_gemms);
   std::vector<MLAS_GEMM_U8X8_DATA_PARAMS> gemm_data_vec(num_gemms);
@@ -71,11 +71,12 @@ Status MatMulIntegerToFloatBase::ComputeCommon(OpKernelContext* ctx,
     params.A = a_data + helper.LeftOffsets()[gemm_idx];
     params.lda = gemm_shape.K;
     params.ZeroPointA = a_zero_point;
+    params.BIsPacked = bool(packed_b_);
     params.B = bool(packed_b_) ? packed_b_.get() : 
         static_cast<const uint8_t*>(b->DataRaw()) + helper.RightOffsets()[gemm_idx];
     params.ldb = gemm_shape.N;
     params.ZeroPointB = &b_zero_point;
-    params.C = reinterpret_cast<int32_t*>(y_data) + helper.OutputOffsets()[gemm_idx];
+    params.C = reinterpret_cast<int32_t*>(y_data + helper.OutputOffsets()[gemm_idx]);
     params.ldc = gemm_shape.N;
   }
 
@@ -138,7 +139,6 @@ Status DynamicQuantizeMatMul::Compute(OpKernelContext* ctx) const {
                 "DynamicQuantizeMatMul : input B zero point must be a scalar or 1D tensor of size 1. Per-Channel is not supported yet.");
     b_zero_point = *static_cast<const uint8_t*>(b_zero_point_tensor->DataRaw());
   }
-  std::atomic<uint32_t> __core_dbg[64] = {0};
 
   // calculate quantization parameter of a
   const float* a_data = a->template Data<float>();
