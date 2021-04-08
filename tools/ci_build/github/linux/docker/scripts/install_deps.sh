@@ -119,13 +119,9 @@ ${PYTHON_EXE} -m pip install -r ${0/%install_deps\.sh/requirements\.txt}
 if [ $DEVICE_TYPE = "gpu" ]; then
   if [[ $INSTALL_DEPS_TRAINING = true ]]; then
     if [[ $ORTMODULE_BUILD = false ]]; then
-      # If ortmodule_build is true, then test dependencies will be manually installed by the calling script
       ${PYTHON_EXE} -m pip install -r ${0/%install_deps.sh/training\/requirements.txt}
     else
-      ${PYTHON_EXE} -m pip install --user -r ${0/%install_deps.sh/training\/requirements.txt}
-    #   ${PYTHON_EXE} -m pip install -r ${0/%install_deps.sh/training\/ortmodule\/stage1\/requirements.txt}
-    #   # Due to a [bug on DeepSpeed](https://github.com/microsoft/DeepSpeed/issues/663), we install it separately through ortmodule/stage2/requirements.txt
-    #   ${PYTHON_EXE} -m pip install -r ${0/%install_deps.sh/training\/ortmodule\/stage2\/requirements.txt}
+      source ${0/%install_deps\.sh/install_miniconda\.sh}
     fi
   fi
   if [[ $INSTALL_DEPS_DISTRIBUTED_SETUP = true ]]; then
