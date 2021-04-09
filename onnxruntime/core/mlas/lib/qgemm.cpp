@@ -2681,7 +2681,7 @@ struct MLAS_GEMM_U8X8_THREAD_SEG {
 MLAS_FORCEINLINE
 void
 MlasGemmU8X82DStride(
-    size_t /*NumSegs*/,
+    size_t NumSegs,
     size_t M,
     size_t N,
     size_t K,
@@ -2691,13 +2691,13 @@ MlasGemmU8X82DStride(
     ptrdiff_t& ThreadCountM,
     ptrdiff_t& ThreadCountN)
 {
-    //if (NumSegs == 1) {
-    //    ThreadStrideM = M;
-    //    ThreadStrideN = N;
-    //    ThreadCountM = 1;
-    //    ThreadCountN = 1;
-    //    return;
-    //}
+    if (NumSegs == 1) {
+        ThreadStrideM = M;
+        ThreadStrideN = N;
+        ThreadCountM = 1;
+        ThreadCountN = 1;
+        return;
+    }
 
     ThreadStrideM = dispatch->ThreadStrideM;
     ThreadStrideN = dispatch->ThreadStrideN;
@@ -2716,41 +2716,45 @@ MlasGemmU8X82DStride(
         MLAS_QGEMM_THREAD_COMPLEXITY / (ThreadStrideM * ThreadStrideN * K) + 1;
     ThreadStrideM = std::min(ptrdiff_t(M), ThreadStrideM * multipler);
 
-    //if (N >= 4 * M) {
-    //    // split N first
-    //    ptrdiff_t SegN = (N + NumSegs - 1) / NumSegs;
-    //    if (SegN >= (ThreadStrideN * 2)) {
-    //        ThreadStrideN = (SegN + ThreadStrideN - 1) / ThreadStrideN * ThreadStrideN;
-    //        ThreadStrideN = std::min(ptrdiff_t(N), ThreadStrideN);
-    //    }
-    //    ThreadCountN = (N + ThreadStrideN - 1) / ThreadStrideN;
-
-    //    // split M
-    //    NumSegs = (NumSegs + ThreadCountN - 1) / ThreadCountN;
-    //    ptrdiff_t SegM = (M + NumSegs - 1) / NumSegs;
-    //    ThreadStrideM = (SegM + ThreadStrideM - 1) / ThreadStrideM * ThreadStrideM;
-    //    ThreadStrideM = std::min(ptrdiff_t(M), ThreadStrideM);
-    //    ThreadCountM = (M + ThreadStrideM - 1) / ThreadStrideM;
-    //}
-    //else
-    //{
-    //    // split M first
-    //    ptrdiff_t SegM = (M + NumSegs - 1) / NumSegs;
-    //    if (SegM >= (ThreadStrideM * 2)) {
-    //        ThreadStrideM = (SegM + ThreadStrideM - 1) / ThreadStrideM * ThreadStrideM;
-    //        ThreadStrideM = std::min(ptrdiff_t(M), ThreadStrideM);        
-    //    }
-    //    ThreadCountM = (M + ThreadStrideM - 1) / ThreadStrideM;
-
-    //    // split N 
-    //    NumSegs = (NumSegs + ThreadCountM - 1) / ThreadCountM;
-    //    ptrdiff_t SegN = (N + NumSegs - 1) / NumSegs;
-    //    ThreadStrideN = (SegN + ThreadStrideN - 1) / ThreadStrideN * ThreadStrideN;
-    //    ThreadStrideN = std::min(ptrdiff_t(N), ThreadStrideN);
-    //    ThreadCountN = (N + ThreadStrideN - 1) / ThreadStrideN;
-    //}
     ThreadCountM = (M + ThreadStrideM - 1) / ThreadStrideM;
     ThreadCountN = (N + ThreadStrideN - 1) / ThreadStrideN;
+    if ((ThreadCountM * ThreadCountN) <= ptrdiff_t(NumSegs * 2)){
+        return;
+    }
+
+    if (N >= 4 * M) {
+        // split N first
+        ptrdiff_t SegN = (N + NumSegs - 1) / NumSegs;
+        if (SegN >= (ThreadStrideN * 2)) {
+            ThreadStrideN = (SegN + ThreadStrideN - 1) / ThreadStrideN * ThreadStrideN;
+            ThreadStrideN = std::min(ptrdiff_t(N), ThreadStrideN);
+        }
+        ThreadCountN = (N + ThreadStrideN - 1) / ThreadStrideN;
+
+        // split M
+        NumSegs = (NumSegs + ThreadCountN - 1) / ThreadCountN;
+        ptrdiff_t SegM = (M + NumSegs - 1) / NumSegs;
+        ThreadStrideM = (SegM + ThreadStrideM - 1) / ThreadStrideM * ThreadStrideM;
+        ThreadStrideM = std::min(ptrdiff_t(M), ThreadStrideM);
+        ThreadCountM = (M + ThreadStrideM - 1) / ThreadStrideM;
+    }
+    else
+    {
+        // split M first
+        ptrdiff_t SegM = (M + NumSegs - 1) / NumSegs;
+        if (SegM >= (ThreadStrideM * 2)) {
+            ThreadStrideM = (SegM + ThreadStrideM - 1) / ThreadStrideM * ThreadStrideM;
+            ThreadStrideM = std::min(ptrdiff_t(M), ThreadStrideM);        
+        }
+        ThreadCountM = (M + ThreadStrideM - 1) / ThreadStrideM;
+
+        // split N 
+        NumSegs = (NumSegs + ThreadCountM - 1) / ThreadCountM;
+        ptrdiff_t SegN = (N + NumSegs - 1) / NumSegs;
+        ThreadStrideN = (SegN + ThreadStrideN - 1) / ThreadStrideN * ThreadStrideN;
+        ThreadStrideN = std::min(ptrdiff_t(N), ThreadStrideN);
+        ThreadCountN = (N + ThreadStrideN - 1) / ThreadStrideN;
+    }
 }
 
 
@@ -2853,7 +2857,7 @@ MlasGemmBatch(
 {
     // Segment the work for parallelization. This is a two dimentional work
     // partition.
-    size_t num_segs = MlasGetMaximumThreadCount(ThreadPool);
+    size_t num_segs = MlasGetMaximumThreadCount(ThreadPool) * 2;
     num_segs = (num_segs + BatchN - 1) / BatchN;
 
     MLAS_GEMM_U8X8_THREAD_SEG SegInfo;
